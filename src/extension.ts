@@ -30,7 +30,7 @@ interface NextTransition {
 
 const MINUTES_PER_DAY = 24 * 60;
 const UPDATE_INTERVAL_MS = 10_000; // 每 10 秒刷新一次状态栏
-const STATUS_BAR_PRIORITY = 100;
+const STATUS_BAR_PRIORITY = 0;
 
 // ---------------------------------------------------------------------------
 // 纯函数：时间解析与计算（导出以便单元测试）
