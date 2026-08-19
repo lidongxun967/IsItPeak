@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '要发布的版本号（如 1.0.1）。留空则自动从 git tag 提取（去除 v 前缀）'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Package & Publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set version from git tag
+        run: |
+          # 手动触发时优先使用输入的版本号，否则从 tag（v1.2.3）中提取
+          # 版本号仅写入环境变量，打包时作为位置参数动态注入，不修改 package.json
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Release version: $VERSION"
+
+      - name: Package VSIX
+        # 位置参数指定版本号；--no-update-package-json 保证不改动 package.json
+        run: pnpm exec vsce package --allow-missing-repository --no-update-package-json --no-git-tag-version "$VERSION"
+
+      - name: Publish to VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: pnpm exec vsce publish --packagePath "isitpeak-${VERSION}.vsix" --pat "$VSCE_PAT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: 'isitpeak-*.vsix'
+          generate_release_notes: true

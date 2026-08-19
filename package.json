@@ -2,7 +2,7 @@
   "name": "isitpeak",
   "displayName": "IsItPeak?",
   "description": "通用的峰谷价标识插件",
-  "version": "0.0.1",
+  "version": "0.0.0",
   "publisher": "debug967",
   "repository": "https://github.com/lidongxun967/IsItPeak",
   "engines": {
