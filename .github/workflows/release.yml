@@ -56,6 +56,13 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: pnpm exec vsce publish --packagePath "isitpeak-${VERSION}.vsix" --pat "$VSCE_PAT"
 
+      - name: Publish to Open VSX
+        # 未配置 OVSX_TOKEN 时自动跳过，不影响 Marketplace 发布
+        env:
+          OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
+        if: env.OVSX_TOKEN != ''
+        run: pnpm dlx ovsx publish "isitpeak-${VERSION}.vsix" -p "$OVSX_TOKEN"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
