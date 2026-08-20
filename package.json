@@ -2,7 +2,7 @@
   "name": "isitpeak",
   "displayName": "IsItPeak?",
   "description": "通用的峰谷价标识插件",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "publisher": "debug967",
   "repository": "https://github.com/lidongxun967/IsItPeak",
   "engines": {
@@ -64,6 +64,16 @@
           "type": "boolean",
           "default": true,
           "description": "状态在峰价/谷价之间切换时是否弹出通知"
+        },
+        "isitpeak.showRemaining": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否在状态栏直接显示当前状态剩余时长（精确到分钟，如「峰价还剩2小时30分钟」）"
+        },
+        "isitpeak.peakYellowBackground": {
+          "type": "boolean",
+          "default": true,
+          "description": "处于峰价时段时是否使用黄色背景高亮状态栏"
         }
       }
     }

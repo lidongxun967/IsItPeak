@@ -171,6 +171,8 @@ export function activate(context: vscode.ExtensionContext) {
 		const peakLabel = config.get<string>('peakLabel', '峰价');
 		const valleyLabel = config.get<string>('valleyLabel', '谷价');
 		const notifyOnSwitch = config.get<boolean>('notifyOnSwitch', true);
+		const showRemaining = config.get<boolean>('showRemaining', true);
+		const peakYellowBackground = config.get<boolean>('peakYellowBackground', true);
 		const periods = parsePeriods(config.get<TimePeriod[]>('peakPeriods', []));
 
 		const now = new Date();
@@ -193,6 +195,10 @@ export function activate(context: vscode.ExtensionContext) {
 			inPeak = isInPeak(minuteOfDay, periods);
 			const transition = getNextTransition(minuteOfDay, periods);
 			text = inPeak ? peakLabel : valleyLabel;
+			// 可选：在状态栏直接显示当前状态剩余时长（精确到分钟）
+			if (showRemaining) {
+				text = `${text}还剩${formatDuration(transition.deltaMinutes)}`;
+			}
 			const lines = [
 				`当前：${inPeak ? peakLabel : valleyLabel}`,
 				`当前时间：${currentTimeLabel}`,
@@ -207,6 +213,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 		statusBarItem.text = text;
 		statusBarItem.tooltip = tooltip;
+		// 可选：峰价时段使用黄色背景高亮（谷价或关闭时恢复默认背景）
+		statusBarItem.backgroundColor =
+			inPeak && peakYellowBackground ? new vscode.ThemeColor('statusBarItem.warningBackground') : undefined;
 
 		// 状态发生切换时弹出通知（首次初始化不弹）
 		const isFirstUpdate = lastInPeak === undefined;

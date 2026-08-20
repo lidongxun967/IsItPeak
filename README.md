@@ -13,6 +13,8 @@
   - 若处于谷价时段：`距离峰价还有 x小时x分钟`
 - 支持配置多个峰价时段，并支持跨天时段（如 `22:00` 至 `06:00`）
 - 状态在峰价/谷价之间切换时弹出通知（如 `已进入峰价时段（09:00）`），可在设置中关闭
+- 可选：在状态栏直接显示当前状态剩余时长（精确到分钟，如 `峰价还剩2小时30分钟`），通过 `isitpeak.showRemaining` 开启
+- 可选：处于峰价时段时使用黄色背景高亮状态栏，通过 `isitpeak.peakYellowBackground` 开启
 - 状态栏每 30 秒自动刷新，修改设置后立即生效
 
 ## Extension Settings
@@ -31,4 +33,6 @@ This extension contributes the following settings:
 * `isitpeak.peakLabel`: 峰价时段显示的状态栏文字（默认 `峰价`）。
 * `isitpeak.valleyLabel`: 非峰价时段显示的状态栏文字（默认 `谷价`）。
 * `isitpeak.notifyOnSwitch`: 状态在峰价/谷价之间切换时是否弹出通知（默认 `true`）。
+* `isitpeak.showRemaining`: 是否在状态栏直接显示当前状态剩余时长（精确到分钟，如 `峰价还剩2小时30分钟`；默认 `true`）。
+* `isitpeak.peakYellowBackground`: 处于峰价时段时是否使用黄色背景高亮状态栏（默认 `true`）。
 
