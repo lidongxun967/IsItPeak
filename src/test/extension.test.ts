@@ -11,7 +11,7 @@ import {
 	getNextTransition,
 	formatDuration,
 	formatClock,
-} from '../extension';
+} from '../time';
 
 /** 将 HH:mm 转换为当日 0 点起的分钟数 */
 function toMinute(hh: number, mm: number): number {
