@@ -2,7 +2,7 @@
   "name": "isitpeak",
   "displayName": "IsItPeak?",
   "description": "通用的峰谷价标识插件",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "publisher": "debug967",
   "repository": "https://github.com/lidongxun967/IsItPeak",
   "engines": {
@@ -31,6 +31,15 @@
               "end": {
                 "type": "string",
                 "description": "结束时间（24 小时制，如 11:00；若小于开始时间则视为跨天）"
+              },
+              "days": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 6
+                },
+                "description": "该时段生效的星期（0=周日、1=周一、……、6=周六）；省略或为空则每天生效"
               }
             },
             "required": [
@@ -41,11 +50,13 @@
           "default": [
             {
               "start": "09:00",
-              "end": "12:00"
+              "end": "12:00",
+              "days": [1, 2, 3, 4, 5]
             },
             {
               "start": "14:00",
-              "end": "18:00"
+              "end": "18:00",
+              "days": [1, 2, 3, 4, 5]
             }
           ],
           "description": "峰价时段列表，支持多个时段与跨天（如 22:00 至 06:00）"

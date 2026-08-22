@@ -5,6 +5,7 @@ import * as assert from 'assert';
 import * as vscode from 'vscode';
 import {
 	parseClockTime,
+	parseDays,
 	parsePeriods,
 	isInPeak,
 	getNextTransition,
@@ -53,6 +54,29 @@ suite('Extension Test Suite', () => {
 			assert.deepStrictEqual(parsePeriods([{ start: 'bad', end: '11:00' }]), []);
 			assert.deepStrictEqual(parsePeriods(undefined), []);
 		});
+
+		test('解析星期过滤 days', () => {
+			const periods = parsePeriods([{ start: '08:00', end: '11:00', days: [1, 2, 2, 5] }]);
+			assert.deepStrictEqual(periods[0].days, [1, 2, 5]); // 去重
+		});
+
+		test('省略或空 days 表示每天生效', () => {
+			assert.strictEqual(parsePeriods([{ start: '08:00', end: '11:00' }])[0].days, undefined);
+			assert.strictEqual(parsePeriods([{ start: '08:00', end: '11:00', days: [] }])[0].days, undefined);
+		});
+	});
+
+	suite('parseDays', () => {
+		test('仅保留 0-6 的整数并去重', () => {
+			assert.deepStrictEqual(parseDays([1, 3, 3, 6]), [1, 3, 6]);
+			assert.deepStrictEqual(parseDays([0, 7, -1, 2, 2.5, '1']), [0, 2]);
+		});
+
+		test('空值返回 undefined', () => {
+			assert.strictEqual(parseDays(undefined), undefined);
+			assert.strictEqual(parseDays([]), undefined);
+			assert.strictEqual(parseDays('abc'), undefined);
+		});
 	});
 
 	suite('isInPeak', () => {
@@ -60,17 +84,36 @@ suite('Extension Test Suite', () => {
 		const crossMidnight = parsePeriods([{ start: '22:00', end: '06:00' }]);
 
 		test('当天时段内/外判断', () => {
-			assert.strictEqual(isInPeak(toMinute(8, 0), sameDay), true);
-			assert.strictEqual(isInPeak(toMinute(10, 30), sameDay), true);
-			assert.strictEqual(isInPeak(toMinute(11, 0), sameDay), false);
-			assert.strictEqual(isInPeak(toMinute(7, 59), sameDay), false);
+			assert.strictEqual(isInPeak(toMinute(8, 0), 1, sameDay), true);
+			assert.strictEqual(isInPeak(toMinute(10, 30), 1, sameDay), true);
+			assert.strictEqual(isInPeak(toMinute(11, 0), 1, sameDay), false);
+			assert.strictEqual(isInPeak(toMinute(7, 59), 1, sameDay), false);
 		});
 
 		test('跨天时段内/外判断', () => {
-			assert.strictEqual(isInPeak(toMinute(23, 0), crossMidnight), true);
-			assert.strictEqual(isInPeak(toMinute(3, 0), crossMidnight), true);
-			assert.strictEqual(isInPeak(toMinute(6, 0), crossMidnight), false);
-			assert.strictEqual(isInPeak(toMinute(12, 0), crossMidnight), false);
+			assert.strictEqual(isInPeak(toMinute(23, 0), 1, crossMidnight), true);
+			assert.strictEqual(isInPeak(toMinute(3, 0), 1, crossMidnight), true);
+			assert.strictEqual(isInPeak(toMinute(6, 0), 1, crossMidnight), false);
+			assert.strictEqual(isInPeak(toMinute(12, 0), 1, crossMidnight), false);
+		});
+
+		test('仅工作日生效：周末不进入峰价', () => {
+			const weekdayOnly = parsePeriods([{ start: '08:00', end: '11:00', days: [1, 2, 3, 4, 5] }]);
+			assert.strictEqual(isInPeak(toMinute(9, 0), 1, weekdayOnly), true); // 周一
+			assert.strictEqual(isInPeak(toMinute(9, 0), 5, weekdayOnly), true); // 周五
+			assert.strictEqual(isInPeak(toMinute(9, 0), 0, weekdayOnly), false); // 周日
+			assert.strictEqual(isInPeak(toMinute(9, 0), 6, weekdayOnly), false); // 周六
+		});
+
+		test('跨天时段早晨部分归属于前一天', () => {
+			const weekdayCross = parsePeriods([{ start: '22:00', end: '06:00', days: [1, 2, 3, 4, 5] }]);
+			// 周二凌晨 03:00 属于周一晚开始的时段
+			assert.strictEqual(isInPeak(toMinute(3, 0), 2, weekdayCross), true);
+			// 周日凌晨 03:00 属于周六，周六不生效
+			assert.strictEqual(isInPeak(toMinute(3, 0), 0, weekdayCross), false);
+			// 周五晚 23:00 生效；周六晚 23:00 不生效
+			assert.strictEqual(isInPeak(toMinute(23, 0), 5, weekdayCross), true);
+			assert.strictEqual(isInPeak(toMinute(23, 0), 6, weekdayCross), false);
 		});
 	});
 
@@ -79,27 +122,55 @@ suite('Extension Test Suite', () => {
 		const crossMidnight = parsePeriods([{ start: '22:00', end: '06:00' }]);
 
 		test('谷价时段返回下一次峰价开始', () => {
-			const t = getNextTransition(toMinute(13, 0), sameDay);
+			const t = getNextTransition(toMinute(13, 0), 1, sameDay);
 			assert.strictEqual(t.type, 'peak-start');
 			assert.strictEqual(t.deltaMinutes, 19 * 60); // 次日 08:00
 		});
 
 		test('峰价时段返回当前峰价结束', () => {
-			const t = getNextTransition(toMinute(9, 0), sameDay);
+			const t = getNextTransition(toMinute(9, 0), 1, sameDay);
 			assert.strictEqual(t.type, 'peak-end');
 			assert.strictEqual(t.deltaMinutes, 2 * 60); // 11:00
 		});
 
 		test('跨天时段次日凌晨仍算当前峰价', () => {
-			const t = getNextTransition(toMinute(3, 0), crossMidnight);
+			const t = getNextTransition(toMinute(3, 0), 1, crossMidnight);
 			assert.strictEqual(t.type, 'peak-end');
 			assert.strictEqual(t.deltaMinutes, 3 * 60); // 06:00
 		});
 
 		test('跨天时段晚间峰价开始前返回开始时间', () => {
-			const t = getNextTransition(toMinute(20, 0), crossMidnight);
+			const t = getNextTransition(toMinute(20, 0), 1, crossMidnight);
 			assert.strictEqual(t.type, 'peak-start');
 			assert.strictEqual(t.deltaMinutes, 2 * 60); // 22:00
+		});
+
+		test('仅工作日生效：周日 09:00 返回周一 08:00 开始', () => {
+			const weekdayOnly = parsePeriods([{ start: '08:00', end: '11:00', days: [1, 2, 3, 4, 5] }]);
+			const t = getNextTransition(toMinute(9, 0), 0, weekdayOnly);
+			assert.strictEqual(t.type, 'peak-start');
+			assert.strictEqual(t.deltaMinutes, 23 * 60); // 周一 08:00
+		});
+
+		test('仅工作日生效：周六白天返回周一 22:00 开始', () => {
+			const weekdayCross = parsePeriods([{ start: '22:00', end: '06:00', days: [1, 2, 3, 4, 5] }]);
+			const t = getNextTransition(toMinute(12, 0), 6, weekdayCross);
+			assert.strictEqual(t.type, 'peak-start');
+			assert.strictEqual(t.deltaMinutes, 22 * 60 + 2 * 24 * 60 - 12 * 60); // 周一 22:00
+		});
+
+		test('仅工作日生效：周五晚 23:00 返回周六 06:00 结束', () => {
+			const weekdayCross = parsePeriods([{ start: '22:00', end: '06:00', days: [1, 2, 3, 4, 5] }]);
+			const t = getNextTransition(toMinute(23, 0), 5, weekdayCross);
+			assert.strictEqual(t.type, 'peak-end');
+			assert.strictEqual(t.deltaMinutes, 7 * 60); // 周六 06:00（周五晚时段结束）
+		});
+
+		test('仅工作日生效：周三凌晨 03:00 返回当日 06:00 结束', () => {
+			const weekdayCross = parsePeriods([{ start: '22:00', end: '06:00', days: [1, 2, 3, 4, 5] }]);
+			const t = getNextTransition(toMinute(3, 0), 3, weekdayCross);
+			assert.strictEqual(t.type, 'peak-end');
+			assert.strictEqual(t.deltaMinutes, 3 * 60); // 周三 06:00（周二晚时段结束）
 		});
 	});
 

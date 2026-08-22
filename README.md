@@ -21,14 +21,16 @@
 
 This extension contributes the following settings:
 
-* `isitpeak.peakPeriods`: 峰价时段列表，每项包含 `start` 与 `end`（均为 24 小时制字符串，如 `"08:00"`）。若 `end` 小于 `start` 则视为跨天时段。默认示例：
+* `isitpeak.peakPeriods`: 峰价时段列表，每项包含 `start` 与 `end`（均为 24 小时制字符串，如 `"08:00"`）。若 `end` 小于 `start` 则视为跨天时段。可选 `days` 指定该时段生效的星期（`0`=周日、`1`=周一、……、`6`=周六），省略或为空则每天生效。默认两个时段仅在周一至周五生效：
 
   ```json
   "isitpeak.peakPeriods": [
-    { "start": "09:00", "end": "12:00" },
-    { "start": "14:00", "end": "18:00" }
+    { "start": "09:00", "end": "12:00", "days": [1, 2, 3, 4, 5] },
+    { "start": "14:00", "end": "18:00", "days": [1, 2, 3, 4, 5] }
   ]
   ```
+
+  跨天时段（如 `22:00` 至 `06:00`）的早晨部分归属于其开始日（前一天），例如仅工作日生效的 `22:00`-`06:00` 会在周六 `06:00` 结束。
 
 * `isitpeak.peakLabel`: 峰价时段显示的状态栏文字（默认 `峰价`）。
 * `isitpeak.valleyLabel`: 非峰价时段显示的状态栏文字（默认 `谷价`）。

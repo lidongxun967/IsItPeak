@@ -12,6 +12,8 @@ interface TimePeriod {
 	start: string;
 	/** 结束时间（24 小时制）；若小于开始时间则视为跨天（如 22:00 至 06:00） */
 	end: string;
+	/** 该时段生效的星期（0=周日、1=周一、……、6=周六）；省略或为空表示每天生效 */
+	days?: number[];
 }
 
 /** 解析后的时段（分钟表示，end 已归一化为大于 start，可能超过 1440） */
@@ -20,6 +22,8 @@ interface ParsedPeriod {
 	end: number;
 	startLabel: string;
 	endLabel: string;
+	/** 生效的星期；undefined 表示每天生效 */
+	days: number[] | undefined;
 }
 
 /** 下一次状态切换事件 */
@@ -55,6 +59,25 @@ export function parseClockTime(value: string): { minutes: number; label: string 
 }
 
 /**
+ * 解析配置中的星期数组：仅保留 0-6 的整数并去重。
+ * 省略、非数组或为空时返回 undefined（表示每天生效）。
+ */
+export function parseDays(days: unknown): number[] | undefined {
+	if (!Array.isArray(days) || days.length === 0) {
+		return undefined;
+	}
+	const unique = [
+		...new Set(days.filter((d): d is number => typeof d === 'number' && Number.isInteger(d) && d >= 0 && d <= 6)),
+	];
+	return unique.length > 0 ? unique : undefined;
+}
+
+/** 判断时段在指定星期（0=周日、1=周一、……、6=周六）是否生效 */
+function appliesOnDay(p: ParsedPeriod, weekday: number): boolean {
+	return p.days === undefined || p.days.includes(weekday);
+}
+
+/**
  * 将配置中的时段字符串解析为分钟表示。
  * 若结束时间不大于开始时间，则视为跨天（结束时间加一天）。
  */
@@ -75,6 +98,7 @@ export function parsePeriods(raw: TimePeriod[] | undefined): ParsedPeriod[] {
 			end: endMinutes,
 			startLabel: start.label,
 			endLabel: end.label,
+			days: parseDays(item.days),
 		});
 	}
 	return periods;
@@ -82,18 +106,22 @@ export function parsePeriods(raw: TimePeriod[] | undefined): ParsedPeriod[] {
 
 /**
  * 判断某分钟（当日 0 点起的分钟数）是否处于峰价时段。
- * 支持跨天时段（如 22:00 至 06:00）。
+ * 支持跨天时段（如 22:00 至 06:00）；跨天时段的早晨部分归属于其开始日（前一天）。
+ * @param weekday 当前星期（0=周日、1=周一、……、6=周六）
  */
-export function isInPeak(minuteOfDay: number, periods: ParsedPeriod[]): boolean {
+export function isInPeak(minuteOfDay: number, weekday: number, periods: ParsedPeriod[]): boolean {
 	for (const p of periods) {
 		if (p.end <= MINUTES_PER_DAY) {
 			// 当天时段：start <= t < end
-			if (minuteOfDay >= p.start && minuteOfDay < p.end) {
+			if (minuteOfDay >= p.start && minuteOfDay < p.end && appliesOnDay(p, weekday)) {
 				return true;
 			}
 		} else {
-			// 跨天时段：晚间部分 [start, 1440) 或早晨部分 [0, end - 1440)
-			if (minuteOfDay >= p.start || minuteOfDay < p.end - MINUTES_PER_DAY) {
+			// 跨天时段：晚间部分 [start, 1440) 属于当天，早晨部分 [0, end - 1440) 属于前一天
+			if (minuteOfDay >= p.start && appliesOnDay(p, weekday)) {
+				return true;
+			}
+			if (minuteOfDay < p.end - MINUTES_PER_DAY && appliesOnDay(p, (weekday + 6) % 7)) {
 				return true;
 			}
 		}
@@ -103,28 +131,34 @@ export function isInPeak(minuteOfDay: number, periods: ParsedPeriod[]): boolean 
 
 /**
  * 计算从当前分钟开始，距离下一次状态切换（峰价开始/结束）的分钟数。
- * 时段按天循环，因此只需比较当天与明天的边界时间。
+ * 时段按天循环并按星期过滤，因此搜索未来 0-7 天即可覆盖完整周期。
+ * @param weekday 当前星期（0=周日、1=周一、……、6=周六）
  */
-export function getNextTransition(minuteOfDay: number, periods: ParsedPeriod[]): NextTransition {
+export function getNextTransition(
+	minuteOfDay: number,
+	weekday: number,
+	periods: ParsedPeriod[],
+): NextTransition {
 	let best: NextTransition | undefined;
 	for (const p of periods) {
+		const isCrossMidnight = p.end > MINUTES_PER_DAY;
 		const endClock = p.end % MINUTES_PER_DAY;
-		const events: Array<{ time: number; type: 'peak-start' | 'peak-end' }> = [
-			{ time: p.start, type: 'peak-start' },
-			{ time: endClock, type: 'peak-end' },
-		];
-		// 当天尚未到达的边界
-		for (const e of events) {
-			const delta = e.time - minuteOfDay;
-			if (delta > 0 && (!best || delta < best.deltaMinutes)) {
-				best = { type: e.type, deltaMinutes: delta };
+		for (let dayOffset = 0; dayOffset <= 7; dayOffset++) {
+			// 峰价开始事件：发生在 dayOffset 天，归属 dayOffset 天的星期
+			if (appliesOnDay(p, (weekday + dayOffset) % 7)) {
+				const startDelta = p.start + dayOffset * MINUTES_PER_DAY - minuteOfDay;
+				if (startDelta > 0 && (!best || startDelta < best.deltaMinutes)) {
+					best = { type: 'peak-start', deltaMinutes: startDelta };
+				}
 			}
-		}
-		// 明天的边界（加一天）
-		for (const e of events) {
-			const delta = e.time + MINUTES_PER_DAY - minuteOfDay;
-			if (!best || delta < best.deltaMinutes) {
-				best = { type: e.type, deltaMinutes: delta };
+			// 峰价结束事件：发生在 dayOffset 天的 endClock 处。
+			// 非跨天时段归属当天；跨天时段（endClock 为次日凌晨）归属开始日的前一天。
+			const endDay = (weekday + dayOffset - (isCrossMidnight ? 1 : 0) + 7) % 7;
+			if (appliesOnDay(p, endDay)) {
+				const endDelta = endClock + dayOffset * MINUTES_PER_DAY - minuteOfDay;
+				if (endDelta > 0 && (!best || endDelta < best.deltaMinutes)) {
+					best = { type: 'peak-end', deltaMinutes: endDelta };
+				}
 			}
 		}
 	}
@@ -177,6 +211,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 		const now = new Date();
 		const minuteOfDay = now.getHours() * 60 + now.getMinutes();
+		const weekday = now.getDay(); // 0=周日、1=周一、……、6=周六
 		const currentTimeLabel = formatClock(minuteOfDay);
 
 		let text: string;
@@ -192,8 +227,8 @@ export function activate(context: vscode.ExtensionContext) {
 				'尚未配置峰价时段，请在设置中填写 isitpeak.peakPeriods',
 			].join('\n');
 		} else {
-			inPeak = isInPeak(minuteOfDay, periods);
-			const transition = getNextTransition(minuteOfDay, periods);
+			inPeak = isInPeak(minuteOfDay, weekday, periods);
+			const transition = getNextTransition(minuteOfDay, weekday, periods);
 			text = inPeak ? peakLabel : valleyLabel;
 			// 可选：在状态栏直接显示当前状态剩余时长（精确到分钟）
 			if (showRemaining) {
