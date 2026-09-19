@@ -7,10 +7,13 @@ import {
 	parseClockTime,
 	parseDays,
 	parsePeriods,
+	parseHolidayData,
+	isHolidayDate,
 	isInPeak,
 	getNextTransition,
 	formatDuration,
 	formatClock,
+	HolidayData,
 } from '../time';
 
 /** 将 HH:mm 转换为当日 0 点起的分钟数 */
@@ -171,6 +174,77 @@ suite('Extension Test Suite', () => {
 			const t = getNextTransition(toMinute(3, 0), 3, weekdayCross);
 			assert.strictEqual(t.type, 'peak-end');
 			assert.strictEqual(t.deltaMinutes, 3 * 60); // 周三 06:00（周二晚时段结束）
+		});
+	});
+
+	suite('节假日', () => {
+		test('parseHolidayData 归一化日期并忽略非法项', () => {
+			// 故意混入非法数据，验证解析的健壮性
+			const raw = {
+				'2026': ['1.1', ' 01.01 ', '12.31', 'bad', '13.1', '0.5', '1.32', 5],
+				'26': ['1.1'], // 非法年份
+				'2027': '1.1', // 非数组
+			} as unknown as HolidayData;
+			const data = parseHolidayData(raw);
+			assert.deepStrictEqual([...data.keys()].sort(), [2026]);
+			const set = data.get(2026)!;
+			assert.strictEqual(set.size, 2);
+			assert.strictEqual(set.has('1.1'), true);
+			assert.strictEqual(set.has('12.31'), true);
+			assert.deepStrictEqual(parseHolidayData(undefined), new Map());
+		});
+
+		test('isHolidayDate 按年月日匹配', () => {
+			const data = parseHolidayData({ '2026': ['1.1', '2.14'] });
+			assert.strictEqual(isHolidayDate(new Date(2026, 0, 1), data), true);
+			assert.strictEqual(isHolidayDate(new Date(2026, 1, 14), data), true);
+			assert.strictEqual(isHolidayDate(new Date(2026, 0, 2), data), false);
+			assert.strictEqual(isHolidayDate(new Date(2025, 0, 1), data), false);
+		});
+
+		test('isInPeak：开启 freeOnHolidays 的时段在节假日不生效', () => {
+			const periods = parsePeriods([{ start: '08:00', end: '11:00', freeOnHolidays: true }]);
+			// 假设 1.1（周四）为节假日
+			assert.strictEqual(isInPeak(toMinute(9, 0), 4, periods, true), false);
+			assert.strictEqual(isInPeak(toMinute(9, 0), 4, periods, false), true); // 非节假日照常
+			assert.strictEqual(isInPeak(toMinute(9, 0), 4, periods), true); // 未传参默认非节假日
+		});
+
+		test('isInPeak：未开启 freeOnHolidays 的时段在节假日仍生效', () => {
+			const periods = parsePeriods([{ start: '08:00', end: '11:00' }]);
+			assert.strictEqual(isInPeak(toMinute(9, 0), 4, periods, true), true);
+		});
+
+		test('getNextTransition：节假日跳过峰价开始事件', () => {
+			const periods = parsePeriods([{ start: '08:00', end: '11:00', days: [1, 2, 3, 4, 5], freeOnHolidays: true }]);
+			const data = parseHolidayData({ '2026': ['1.1'] });
+			// 2025-12-31（周三）13:00：1.1 为节假日，下一次峰价为 1.2（周五）08:00
+			const now = new Date(2025, 11, 31, 13, 0);
+			const t = getNextTransition(13 * 60, now.getDay(), periods, { now, data });
+			assert.strictEqual(t.type, 'peak-start');
+			assert.strictEqual(t.deltaMinutes, 43 * 60);
+			// 不提供节假日上下文时仍为 1.1 08:00
+			const t2 = getNextTransition(13 * 60, now.getDay(), periods);
+			assert.strictEqual(t2.deltaMinutes, 19 * 60);
+		});
+
+		test('getNextTransition：节假日不影响未开启 freeOnHolidays 的时段', () => {
+			const periods = parsePeriods([{ start: '08:00', end: '11:00', days: [1, 2, 3, 4, 5] }]);
+			const data = parseHolidayData({ '2026': ['1.1'] });
+			const now = new Date(2025, 11, 31, 13, 0);
+			const t = getNextTransition(13 * 60, now.getDay(), periods, { now, data });
+			assert.strictEqual(t.type, 'peak-start');
+			assert.strictEqual(t.deltaMinutes, 19 * 60);
+		});
+
+		test('getNextTransition：跨天时段在节假日不产生结束事件', () => {
+			// 2025-12-31（周三）为节假日，其晚间的跨天时段不生效
+			const periods = parsePeriods([{ start: '22:00', end: '06:00', freeOnHolidays: true }]);
+			const data = parseHolidayData({ '2025': ['12.31'] });
+			const now = new Date(2025, 11, 31, 13, 0);
+			const t = getNextTransition(13 * 60, now.getDay(), periods, { now, data });
+			assert.strictEqual(t.type, 'peak-start');
+			assert.strictEqual(t.deltaMinutes, 22 * 60 - 13 * 60 + 24 * 60); // 1.1 22:00
 		});
 	});
 

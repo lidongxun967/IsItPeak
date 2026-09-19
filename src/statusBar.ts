@@ -5,7 +5,10 @@
 import * as vscode from 'vscode';
 import {
 	TimePeriod,
+	HolidayData,
 	parsePeriods,
+	parseHolidayData,
+	isHolidayDate,
 	isInPeak,
 	getNextTransition,
 	formatDuration,
@@ -36,11 +39,13 @@ export function registerPeakStatusBar(): vscode.Disposable {
 		const showRemaining = config.get<boolean>('showRemaining', true);
 		const peakYellowBackground = config.get<boolean>('peakYellowBackground', true);
 		const periods = parsePeriods(config.get<TimePeriod[]>('peakPeriods', []));
+		const holidays = parseHolidayData(config.get<HolidayData>('holidayData', {}));
 
 		const now = new Date();
 		const minuteOfDay = now.getHours() * 60 + now.getMinutes();
 		const weekday = now.getDay(); // 0=周日、1=周一、……、6=周六
 		const currentTimeLabel = formatClock(minuteOfDay);
+		const isHolidayToday = isHolidayDate(now, holidays);
 
 		let text: string;
 		let tooltip: string;
@@ -55,8 +60,8 @@ export function registerPeakStatusBar(): vscode.Disposable {
 				'尚未配置峰价时段，请在设置中填写 isitpeak.peakPeriods',
 			].join('\n');
 		} else {
-			inPeak = isInPeak(minuteOfDay, weekday, periods);
-			const transition = getNextTransition(minuteOfDay, weekday, periods);
+			inPeak = isInPeak(minuteOfDay, weekday, periods, isHolidayToday);
+			const transition = getNextTransition(minuteOfDay, weekday, periods, { now, data: holidays });
 			text = inPeak ? peakLabel : valleyLabel;
 			// 可选：在状态栏直接显示当前状态剩余时长（精确到分钟）
 			if (showRemaining) {
@@ -66,6 +71,9 @@ export function registerPeakStatusBar(): vscode.Disposable {
 				`当前：${inPeak ? peakLabel : valleyLabel}`,
 				`当前时间：${currentTimeLabel}`,
 			];
+			if (isHolidayToday) {
+				lines.push('今日为法定节假日，开启了节假日空闲计费的时段按空闲计费');
+			}
 			if (transition.type === 'peak-end') {
 				lines.push(`${peakLabel}将于 ${formatDuration(transition.deltaMinutes)} 后结束`);
 			} else {
