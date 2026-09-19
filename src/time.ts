@@ -174,28 +174,33 @@ export function parsePeriods(raw: TimePeriod[] | undefined): ParsedPeriod[] {
  * 支持跨天时段（如 22:00 至 06:00）；跨天时段的早晨部分归属于其开始日（前一天）。
  * @param weekday 当前星期（0=周日、1=周一、……、6=周六）
  * @param isHoliday 今天是否为法定节假日；为 true 时开启了 freeOnHolidays 的时段不生效
+ * @param isYesterdayHoliday 昨天是否为法定节假日；跨天时段的凌晨部分归属昨天，按昨天的节假日状态判断
  */
 export function isInPeak(
 	minuteOfDay: number,
 	weekday: number,
 	periods: ParsedPeriod[],
 	isHoliday = false,
+	isYesterdayHoliday = false,
 ): boolean {
 	for (const p of periods) {
-		if (isHoliday && p.freeOnHolidays) {
-			continue;
-		}
+		const skipOnHoliday = p.freeOnHolidays === true;
 		if (p.end <= MINUTES_PER_DAY) {
 			// 当天时段：start <= t < end
+			if (skipOnHoliday && isHoliday) {
+				continue;
+			}
 			if (minuteOfDay >= p.start && minuteOfDay < p.end && appliesOnDay(p, weekday)) {
 				return true;
 			}
 		} else {
-			// 跨天时段：晚间部分 [start, 1440) 属于当天，早晨部分 [0, end - 1440) 属于前一天
-			if (minuteOfDay >= p.start && appliesOnDay(p, weekday)) {
+			// 跨天时段：晚间部分 [start, 1440) 属于今天，早晨部分 [0, end - 1440) 属于昨天
+			const eveningSkipped = skipOnHoliday && isHoliday;
+			const morningSkipped = skipOnHoliday && isYesterdayHoliday;
+			if (!eveningSkipped && minuteOfDay >= p.start && appliesOnDay(p, weekday)) {
 				return true;
 			}
-			if (minuteOfDay < p.end - MINUTES_PER_DAY && appliesOnDay(p, (weekday + 6) % 7)) {
+			if (!morningSkipped && minuteOfDay < p.end - MINUTES_PER_DAY && appliesOnDay(p, (weekday + 6) % 7)) {
 				return true;
 			}
 		}

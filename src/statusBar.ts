@@ -46,6 +46,10 @@ export function registerPeakStatusBar(): vscode.Disposable {
 		const weekday = now.getDay(); // 0=周日、1=周一、……、6=周六
 		const currentTimeLabel = formatClock(minuteOfDay);
 		const isHolidayToday = isHolidayDate(now, holidays);
+		const isHolidayYesterday = isHolidayDate(
+			new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1),
+			holidays,
+		);
 
 		let text: string;
 		let tooltip: string;
@@ -60,7 +64,7 @@ export function registerPeakStatusBar(): vscode.Disposable {
 				'尚未配置峰价时段，请在设置中填写 isitpeak.peakPeriods',
 			].join('\n');
 		} else {
-			inPeak = isInPeak(minuteOfDay, weekday, periods, isHolidayToday);
+			inPeak = isInPeak(minuteOfDay, weekday, periods, isHolidayToday, isHolidayYesterday);
 			const transition = getNextTransition(minuteOfDay, weekday, periods, { now, data: holidays });
 			text = inPeak ? peakLabel : valleyLabel;
 			// 可选：在状态栏直接显示当前状态剩余时长（精确到分钟）

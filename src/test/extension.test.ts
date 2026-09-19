@@ -215,6 +215,17 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual(isInPeak(toMinute(9, 0), 4, periods, true), true);
 		});
 
+		test('isInPeak：跨天时段凌晨部分按昨天的节假日状态判断', () => {
+			const periods = parsePeriods([{ start: '22:00', end: '06:00', freeOnHolidays: true }]);
+			// 今天非节假日、昨天是节假日：昨晚时段被跳过，凌晨 03:00 为谷价
+			assert.strictEqual(isInPeak(toMinute(3, 0), 4, periods, false, true), false);
+			// 昨天非节假日：凌晨 03:00 仍为昨晚时段的峰价
+			assert.strictEqual(isInPeak(toMinute(3, 0), 4, periods, false, false), true);
+			// 今天是节假日、昨天不是：凌晨 03:00 归属昨天，仍为峰价；今晚 23:00 被跳过
+			assert.strictEqual(isInPeak(toMinute(3, 0), 4, periods, true, false), true);
+			assert.strictEqual(isInPeak(toMinute(23, 0), 4, periods, true, false), false);
+		});
+
 		test('getNextTransition：节假日跳过峰价开始事件', () => {
 			const periods = parsePeriods([{ start: '08:00', end: '11:00', days: [1, 2, 3, 4, 5], freeOnHolidays: true }]);
 			const data = parseHolidayData({ '2026': ['1.1'] });
